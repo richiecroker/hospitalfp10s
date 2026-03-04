@@ -47,10 +47,8 @@ df = conn.execute(
     ods_mapping as ods
     ON
     rx.hospital = ods.ods_code
-    LIMIT 100
     """
     ).fetchdf()
-st.dataframe(df)
 
 ALL = "All"
 
