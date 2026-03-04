@@ -39,5 +39,15 @@ def get_duckdb_connection():
 st.title("🎈 My new app")
 
 conn = get_duckdb_connection()
-df = conn.execute("SELECT * FROM prescribing LIMIT 100").fetchdf()
+df = conn.execute(
+    """
+    SELECT * 
+    FROM prescribing as rx
+    INNER JOIN
+    ods_mapping as ods
+    ON
+    rx.hospital = ods.ods_code
+    LIMIT 100
+    """
+    ).fetchdf()
 st.dataframe(df)
