@@ -22,4 +22,4 @@ if not os.path.exists(local_db):
 
 conn = duckdb.connect(local_db)
 tables = conn.execute("SHOW TABLES").fetchdf()
-st.write(tables)))
+st.write(tables)
