@@ -4,6 +4,7 @@ import duckdb
 from google.cloud import storage
 from google.oauth2 import service_account
 import pandas as pd
+import plotly.graph_objects as go
 import os
 
 @st.cache_resource
