@@ -41,7 +41,7 @@ st.title("🎈 My new app")
 conn = get_duckdb_connection()
 df = conn.execute(
     """
-    SELECT * 
+    SELECT DISTINCT region, icb, ods_name 
     FROM prescribing as rx
     INNER JOIN
     ods_mapping as ods
@@ -49,7 +49,7 @@ df = conn.execute(
     rx.hospital = ods.ods_code
     """
     ).fetchdf()
-
+st.dataframe(df)
 ALL = "All"
 
 # Region
