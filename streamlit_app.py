@@ -14,3 +14,11 @@ bucket = storage_client.bucket("ebmdatalab")
 blob = bucket.blob("RC_tests/hospitalfp10.duckdb")
 st.write("bucket connected")
 st.write(blob.exists())
+local_db = "/tmp/app.duckdb"
+
+if not os.path.exists(local_db):
+    with st.spinner("Downloading..."):
+        blob.download_to_filename(local_db)
+
+st.write("download done")
+st.write(os.path.getsize(local_db))
