@@ -5,7 +5,7 @@ import sys
 import os
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from db_config import DB_PATH
+DB_PATH = "/tmp/duckdb_builder.duckdb"
 
 st.set_page_config(page_title="CSV Loader", page_icon="📂", layout="centered")
 st.title("📂 CSV Loader")
