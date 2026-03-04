@@ -10,7 +10,6 @@ DB_PATH = "/tmp/duckdb_builder.duckdb"
 st.set_page_config(page_title="CSV Loader", page_icon="📂", layout="centered")
 st.title("📂 CSV Loader")
 
-
 def get_tables():
     try:
         con = duckdb.connect(DB_PATH)
@@ -19,7 +18,6 @@ def get_tables():
         return tables
     except:
         return pd.DataFrame(columns=["name"])
-
 
 def get_table_info(table_name):
     try:
@@ -30,7 +28,6 @@ def get_table_info(table_name):
         return count, cols
     except:
         return 0, pd.DataFrame()
-
 
 # --- Upload section ---
 st.subheader("Add a table")
@@ -74,9 +71,8 @@ st.divider()
 st.subheader("Download")
 
 if not tables.empty:
-     with open(DB_PATH, "rb") as f:
+    with open(DB_PATH, "rb") as f:
         data = f.read()
-    
     st.download_button(
         label="⬇️ Download .duckdb file",
         data=data,
@@ -84,6 +80,5 @@ if not tables.empty:
         mime="application/octet-stream",
         type="primary",
     )
-        )
 else:
     st.caption("Load at least one table to enable download.")
