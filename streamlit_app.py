@@ -46,7 +46,8 @@ df = conn.execute(
     GROUP BY ods_name, ods_code, region, icb
     """
     ).fetchdf()
-st.dataframe(df)
+
+
 ALL = "All"
 
 # Region
@@ -69,3 +70,16 @@ ods_codes = df_icb["ods_code"].unique().tolist() if sel_pr == ALL else [pr_map[s
 # Register as virtual table with duckdb
 codes_df = pd.DataFrame({"ods_code": ods_codes})
 conn.register("_selected_hospitals", codes_df)
+
+#get OME summary data from duckdb for selected practices
+month_items = conn.execute("""
+    SELECT month, sum(items)
+    FROM prescribing AS r
+    JOIN _selected_hospitals AS s
+      ON rx.hospital = h.ods_code
+    GROUP BY month
+    ORDER BY month
+""").fetchdf()
+st.datafram(month_items)
+#unregister virtual table
+conn.unregister("_selected_hospitals")
