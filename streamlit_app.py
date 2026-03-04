@@ -1,4 +1,5 @@
 import streamlit as st
+import duckdb
 
 st.title("🎈 My new app")
 st.write(
