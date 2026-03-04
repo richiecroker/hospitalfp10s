@@ -87,6 +87,19 @@ month_data = conn.execute("""
     ORDER BY month
 """).fetchdf()
 
+top_items_data = conn.execute("""
+    SELECT bnf_name, sum(items)
+    FROM prescribing AS rx
+    JOIN _selected_hospitals AS s
+        ON CASE 
+        WHEN LENGTH(s.ods_code) = 3 THEN LEFT(rx.hospital, 3) = s.ods_code
+        ELSE rx.hospital = s.ods_code
+        END
+    GROUP BY month
+    ORDER BY month
+    LIMIT 20
+""").fetchdf()
+
 #unregister virtual table
 conn.unregister("_selected_hospitals")
 
@@ -111,3 +124,5 @@ with col2:
         yaxis=dict(title="Cost", rangemode="tozero")
     )
     st.plotly_chart(fig2, use_container_width=True)
+
+st.dataframe(top_items_data)
