@@ -77,12 +77,13 @@ month_items = conn.execute("""
     FROM prescribing AS rx
     JOIN _selected_hospitals AS s
         ON CASE 
-        WHEN LENGTH(s.ods_code) = 3 THEN LEFT(rx.hospitale, 3) = s.ods_code
-        ELSE main.code = s.ods_code
+        WHEN LENGTH(s.ods_code) = 3 THEN LEFT(rx.hospital, 3) = s.ods_code
+        ELSE rx.hospital = s.ods_code
         END
     GROUP BY month
     ORDER BY month
 """).fetchdf()
+
 st.dataframe(month_items)
 #unregister virtual table
 conn.unregister("_selected_hospitals")
