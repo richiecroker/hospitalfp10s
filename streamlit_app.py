@@ -16,6 +16,6 @@ result = conn.execute(
    * FROM prescribing
     """).fetchdf()
 
-df = result.copy
+df = result.copy()
 
 st.dataframe(df)
