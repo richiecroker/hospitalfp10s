@@ -140,10 +140,15 @@ def get_duckdb_connection():
             os.remove(tmp_path)
 
     # 3. Full rebuild from BigQuery
+    # Remove any stale local DB first to ensure a clean connection
+    if os.path.exists(LOCAL_DB):
+        os.remove(LOCAL_DB)
+
     with st.spinner("Rebuilding database from source data - this may take a few minutes..."):
         conn = duckdb.connect(LOCAL_DB)
         _rebuild_prescribing(conn)
         _rebuild_ods_mapping(conn)
+        conn.checkpoint()  # flush all writes to disk before uploading
 
     _save_db_to_gcs(bucket)
     return conn
