@@ -21,7 +21,7 @@ CSV_PREFIX       = "RC_tests/HOSPITAL_DISP_COMMUNITY_"  # blobs end in _yyyymm.c
 GCS_DB_PATH      = "hospitalcommunityprescribing/hospitalfp10.duckdb"
 LOCAL_DB         = "/tmp/app.duckdb"
 SQL_PRESCRIBING  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sql", "build_prescribing.sql")
-BQ_ODS_TABLE     = "ebmdatalab.hospitalcommunityprescribing.ods_mapping"
+BQ_ODS_TABLE     = "ebmdatalab.hospitalcommunityprescribing.ods_mapped"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -66,17 +66,21 @@ def _rebuild_prescribing(conn):
     with open(SQL_PRESCRIBING) as f:
         sql = f.read()
     bq = _bq_client()
-    prescribing = bq.query(sql).to_dataframe()  # noqa: F841 — used by DuckDB below
+    df = bq.query(sql).to_dataframe()
     conn.execute("DROP TABLE IF EXISTS prescribing")
-    conn.execute("CREATE TABLE prescribing AS SELECT * FROM prescribing")
+    conn.register("_tmp", df)
+    conn.execute("CREATE TABLE prescribing AS SELECT * FROM _tmp")
+    conn.unregister("_tmp")
 
 
 def _rebuild_ods_mapping(conn):
     """Pull ods_mapping from BigQuery into DuckDB."""
     bq = _bq_client()
-    ods_mapping = bq.query(f"SELECT * FROM `{BQ_ODS_TABLE}`").to_dataframe()  # noqa: F841
+    df = bq.query(f"SELECT * FROM `{BQ_ODS_TABLE}`").to_dataframe()
     conn.execute("DROP TABLE IF EXISTS ods_mapping")
-    conn.execute("CREATE TABLE ods_mapping AS SELECT * FROM ods_mapping")
+    conn.register("_tmp", df)
+    conn.execute("CREATE TABLE ods_mapping AS SELECT * FROM _tmp")
+    conn.unregister("_tmp")
 
 
 def _save_db_to_gcs(bucket):
