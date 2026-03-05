@@ -61,12 +61,20 @@ def _cached_yyyymm(conn) -> str | None:
         return None
 
 
+def _normalise_df(df: pd.DataFrame) -> pd.DataFrame:
+    """Convert BQ-specific types that DuckDB doesn't recognise (e.g. dbdate) to standard types."""
+    for col in df.columns:
+        if hasattr(df[col].dtype, "name") and "date" in str(df[col].dtype).lower():
+            df[col] = pd.to_datetime(df[col]).dt.date
+    return df
+
+
 def _rebuild_prescribing(conn):
     """Pull pre-aggregated prescribing data from BigQuery using build_prescribing.sql."""
     with open(SQL_PRESCRIBING) as f:
         sql = f.read()
     bq = _bq_client()
-    df = bq.query(sql).to_dataframe()
+    df = _normalise_df(bq.query(sql).to_dataframe())
     conn.execute("DROP TABLE IF EXISTS prescribing")
     conn.register("_tmp", df)
     conn.execute("CREATE TABLE prescribing AS SELECT * FROM _tmp")
@@ -76,7 +84,7 @@ def _rebuild_prescribing(conn):
 def _rebuild_ods_mapping(conn):
     """Pull ods_mapping from BigQuery into DuckDB."""
     bq = _bq_client()
-    df = bq.query(f"SELECT * FROM `{BQ_ODS_TABLE}`").to_dataframe()
+    df = _normalise_df(bq.query(f"SELECT * FROM `{BQ_ODS_TABLE}`").to_dataframe())
     conn.execute("DROP TABLE IF EXISTS ods_mapping")
     conn.register("_tmp", df)
     conn.execute("CREATE TABLE ods_mapping AS SELECT * FROM _tmp")
