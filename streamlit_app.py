@@ -148,6 +148,9 @@ df = conn.execute(
     """
 ).fetchdf()
 
+st.write(f"Total rows in ods_mapping: {len(df)}")
+st.write(df[["ods_code", "ods_name"]].drop_duplicates().head(10))
+
 ALL = "All"
 
 # Region filter
