@@ -226,15 +226,8 @@ def query_top_cost(conn: duckdb.DuckDBPyConnection, ods_codes: list[str]) -> pd.
 
 st.image("OpenPrescribing.svg")
 
-st.markdown("""
-<div style="background-color:#e8f4f8; padding:10px; border-radius:5px; border-left:4px solid #1f77b4;">
-Hello!  This is a <b>very</b> early prototype of analysing hospital FP10s that have been dispensed in the community.  Please let use know what you think, and what you've like to see.  Email us at 
-<a href="bennett@phc.ox.ac.uk">bennett@phc.ox.ac.uk</a>.
-</div>
-""", unsafe_allow_html=True)
-
-st.info("""Select at any level — leave filters empty to see all data. You can type to search and select multiple values. 
-For questions email [you@example.com](mailto:you@example.com)""")
+st.info("""Hello!  This is a <b>very</b> early prototype of analysing hospital FP10s that have been dispensed in the community.  Please let use know what you think, and what you've like to see.  Email us at 
+[bennett@phc.ox.ac.uk](mailto:bennett@phc.ox.ac.uk)""")
 
 st.title("Hospital FP10s dispensed in the community viewer")
 
