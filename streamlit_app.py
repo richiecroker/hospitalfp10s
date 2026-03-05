@@ -128,7 +128,7 @@ with col1:
         xaxis=dict(type="date"),
         yaxis=dict(title="Items", rangemode="tozero")
     )
-    st.plotly_chart(fig1, use_container_width=True)
+    st.plotly_chart(fig1, width=True)
 
 with col2:
     fig2 = go.Figure()
@@ -138,7 +138,7 @@ with col2:
         xaxis=dict(type="date"),
         yaxis=dict(title="Cost", rangemode="tozero")
     )
-    st.plotly_chart(fig2, use_container_width=True)
+    st.plotly_chart(fig2, width=True)
 
 col3, col4 = st.columns(2)
 
