@@ -237,6 +237,8 @@ df = conn.execute(
     """
 ).fetchdf()
 
+st.info("Please select required organisation - you can do this at any level.  Hint: you can select multiple organisations by holding down ctrl, and you can also search by typing the name.")
+
 # Initialise session state (empty list = no filter = show all)
 if "sel_region" not in st.session_state:
     st.session_state.sel_region = []
