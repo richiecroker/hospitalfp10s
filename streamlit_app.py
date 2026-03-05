@@ -155,26 +155,33 @@ region_opts = [ALL] + sorted(df["region"].dropna().unique().tolist())
 sel_region = st.selectbox("Region", region_opts, index=0)
 df_region = df if sel_region == ALL else df[df["region"] == sel_region]
 
-# ICB filter (dependent on region)
+# ICB filter (narrowed by region, but ALL is valid final selection)
 icb_opts = [ALL] + sorted(df_region["icb"].dropna().unique().tolist())
 sel_icb = st.selectbox("ICB", icb_opts, index=0)
 df_icb = df_region if sel_icb == ALL else df_region[df_region["icb"] == sel_icb]
 
-# Hospital filter (dependent on ICB)
+# Hospital filter (narrowed by region+ICB, but ALL is valid final selection)
 pr_pairs = (
     df_icb[["ods_code", "ods_name"]]
     .drop_duplicates()
     .sort_values("ods_name")
 )
-# Build label → code map; handle duplicate names by appending code
-pr_map: dict[str, str] = {}
-for row in pr_pairs.itertuples(index=False):
-    label = f"{row.ods_name} ({row.ods_code})"
-    pr_map[label] = row.ods_code  # code is always unique so no collision risk
-
+pr_map: dict[str, str] = {
+    f"{row.ods_name} ({row.ods_code})": row.ods_code
+    for row in pr_pairs.itertuples(index=False)
+}
 pr_opts = [ALL] + list(pr_map.keys())
 sel_pr = st.selectbox("Hospital", pr_opts, index=0)
-ods_codes = df_icb["ods_code"].unique().tolist() if sel_pr == ALL else [pr_map[sel_pr]]
+
+# Resolve which ODS codes to query — use the most specific selection made
+if sel_pr != ALL:
+    ods_codes = [pr_map[sel_pr]]
+elif sel_icb != ALL:
+    ods_codes = df_icb["ods_code"].unique().tolist()
+elif sel_region != ALL:
+    ods_codes = df_region["ods_code"].unique().tolist()
+else:
+    ods_codes = df["ods_code"].unique().tolist()
 
 # ── Data queries ──────────────────────────────────────────────────────────────
 
