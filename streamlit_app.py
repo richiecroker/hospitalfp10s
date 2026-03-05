@@ -1,4 +1,3 @@
-
 import shutil
 import logging
 import os
@@ -22,7 +21,7 @@ CSV_PREFIX       = "RC_tests/HOSPITAL_DISP_COMMUNITY_"  # blobs end in _yyyymm.c
 GCS_DB_PATH      = "hospitalcommunityprescribing/hospitalfp10.duckdb"
 LOCAL_DB         = "/tmp/app.duckdb"
 SQL_PRESCRIBING  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "queries", "build_prescribing.sql")
-BQ_ODS_TABLE     = "ebmdatalab.scmd.ods_mapped"
+BQ_ODS_TABLE     = "ebmdatalab.hospitalcommunityprescribing.ods_mapped"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -119,7 +118,8 @@ def get_duckdb_connection():
     if os.path.exists(LOCAL_DB):
         try:
             conn = duckdb.connect(LOCAL_DB)
-            if _cached_yyyymm(conn) == latest_csv:
+            tables = [r[0] for r in conn.execute("SHOW TABLES").fetchall()]
+            if _cached_yyyymm(conn) == latest_csv and "ods_mapping" in tables and "prescribing" in tables:
                 logger.info("Local DuckDB is up to date, reusing.")
                 return conn
             conn.close()
@@ -134,10 +134,11 @@ def get_duckdb_connection():
             bucket.blob(GCS_DB_PATH).download_to_filename(tmp_path)
         os.replace(tmp_path, LOCAL_DB)
         conn = duckdb.connect(LOCAL_DB)
-        if _cached_yyyymm(conn) == latest_csv:
+        tables = [r[0] for r in conn.execute("SHOW TABLES").fetchall()]
+        if _cached_yyyymm(conn) == latest_csv and "ods_mapping" in tables and "prescribing" in tables:
             logger.info("GCS-cached DuckDB is up to date, using it.")
             return conn
-        logger.info("GCS-cached DuckDB is also stale, doing full rebuild.")
+        logger.info("GCS-cached DuckDB is stale or missing tables, doing full rebuild.")
         conn.close()
     except Exception as e:
         logger.info("No usable GCS-cached DuckDB (%s), doing full rebuild.", e)
@@ -153,7 +154,6 @@ def get_duckdb_connection():
         conn = duckdb.connect(LOCAL_DB)
         _rebuild_prescribing(conn)
         _rebuild_ods_mapping(conn)
-        st.write("Tables after rebuild:", conn.execute("SHOW TABLES").fetchdf())
         conn.checkpoint()  # flush all writes to disk before uploading
 
     _save_db_to_gcs(bucket)
