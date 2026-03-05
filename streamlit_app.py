@@ -20,25 +20,24 @@ BUCKET_NAME      = "ebmdatalab"
 CSV_PREFIX       = "RC_tests/HOSPITAL_DISP_COMMUNITY_"  # blobs end in _yyyymm.csv
 GCS_DB_PATH      = "hospitalcommunityprescribing/hospitalfp10.duckdb"
 LOCAL_DB         = "/tmp/app.duckdb"
-SQL_PRESCRIBING  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "queries", "build_prescribing.sql")
+SQL_PRESCRIBING  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sql", "build_prescribing.sql")
 BQ_ODS_TABLE     = "ebmdatalab.hospitalcommunityprescribing.ods_mapping"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _gcs_client():
-    credentials = service_account.Credentials.from_service_account_info(
+def _credentials():
+    return service_account.Credentials.from_service_account_info(
         st.secrets["gcp_service_account"]
     )
-    return storage.Client(credentials=credentials)
+
+
+def _gcs_client():
+    return storage.Client(credentials=_credentials())
 
 
 def _bq_client():
-    credentials = service_account.Credentials.from_service_account_info(
-        st.secrets["gcp_service_account"],
-        scopes=["https://www.googleapis.com/auth/bigquery.readonly"],
-    )
-    return bigquery.Client(credentials=credentials, project="ebmdatalab")
+    return bigquery.Client(credentials=_credentials(), project="ebmdatalab")
 
 
 def _latest_csv_yyyymm(bucket) -> str | None:
