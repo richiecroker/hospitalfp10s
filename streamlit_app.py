@@ -101,6 +101,20 @@ top_items_data = conn.execute("""
     LIMIT 20
 """).fetchdf()
 
+top_items_data = conn.execute("""
+    SELECT bnf_name, sum(actual_cost) as actual_cost
+    FROM prescribing AS rx
+    JOIN _selected_hospitals AS s
+        ON CASE 
+        WHEN LENGTH(s.ods_code) = 3 THEN LEFT(rx.hospital, 3) = s.ods_code
+        ELSE rx.hospital = s.ods_code
+        END
+    WHERE CAST(month AS DATE) >= (SELECT MAX(CAST(month AS DATE)) FROM prescribing) - INTERVAL '3 months'
+    GROUP BY bnf_name
+    ORDER BY actual_cost DESC
+    LIMIT 20
+""").fetchdf()
+
 #unregister virtual table
 conn.unregister("_selected_hospitals")
 
@@ -126,4 +140,9 @@ with col2:
     )
     st.plotly_chart(fig2, use_container_width=True)
 
-st.dataframe(top_items_data)
+col1, col2 = st.columns(2)
+
+with col1:
+    st.dataframe(top_items_data)
+with col2:
+    st.dataframe(top_cost_data)
