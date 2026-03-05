@@ -237,9 +237,7 @@ df = conn.execute(
     """
 ).fetchdf()
 
-ALL = "All"
-
-# Initialise session state for selections (empty list = no filter = show all)
+# Initialise session state (empty list = no filter = show all)
 if "sel_region" not in st.session_state:
     st.session_state.sel_region = []
 if "sel_icb" not in st.session_state:
@@ -253,19 +251,13 @@ sel_regions = [v for v in st.session_state.get("sel_region", []) if v in region_
 sel_regions = st.multiselect("Region", region_opts, default=sel_regions, key="sel_region")
 df_region = df if not sel_regions else df[df["region"].isin(sel_regions)]
 
-# ICB filter - reset if current value no longer valid given region
-icb_opts = [ALL] + sorted(df_region["icb"].dropna().unique().tolist())
-if st.session_state.sel_icb not in icb_opts:
-    st.session_state.sel_icb = ALL
-sel_icb = st.selectbox(
-    "ICB",
-    icb_opts,
-    index=icb_opts.index(st.session_state.sel_icb),
-    key="sel_icb",
-)
-df_icb = df_region if sel_icb == ALL else df_region[df_region["icb"] == sel_icb]
+# ICB filter
+icb_opts = sorted(df_region["icb"].dropna().unique().tolist())
+sel_icbs = [v for v in st.session_state.get("sel_icb", []) if v in icb_opts]
+sel_icbs = st.multiselect("ICB", icb_opts, default=sel_icbs, key="sel_icb")
+df_icb = df_region if not sel_icbs else df_region[df_region["icb"].isin(sel_icbs)]
 
-# Hospital filter - reset if current value no longer valid given region+ICB
+# Hospital filter
 pr_pairs = (
     df_icb[["ods_code", "ods_name"]]
     .drop_duplicates()
@@ -275,20 +267,14 @@ pr_map: dict[str, str] = {
     f"{row.ods_name} ({row.ods_code})": row.ods_code
     for row in pr_pairs.itertuples(index=False)
 }
-pr_opts = [ALL] + list(pr_map.keys())
-if st.session_state.sel_pr not in pr_opts:
-    st.session_state.sel_pr = ALL
-sel_pr = st.selectbox(
-    "Hospital",
-    pr_opts,
-    index=pr_opts.index(st.session_state.sel_pr),
-    key="sel_pr",
-)
+pr_opts = list(pr_map.keys())
+sel_prs = [v for v in st.session_state.get("sel_pr", []) if v in pr_opts]
+sel_prs = st.multiselect("Hospital Trust", pr_opts, default=sel_prs, key="sel_pr")
 
 # Resolve which ODS codes to query - use the most specific selection made
-if sel_pr != ALL:
-    ods_codes = [pr_map[sel_pr]]
-elif sel_icb != ALL:
+if sel_prs:
+    ods_codes = [pr_map[p] for p in sel_prs]
+elif sel_icbs:
     ods_codes = df_icb["ods_code"].unique().tolist()
 elif sel_regions:
     ods_codes = df_region["ods_code"].unique().tolist()
