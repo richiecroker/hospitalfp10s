@@ -239,23 +239,19 @@ df = conn.execute(
 
 ALL = "All"
 
-# Initialise session state for selections
+# Initialise session state for selections (empty list = no filter = show all)
 if "sel_region" not in st.session_state:
-    st.session_state.sel_region = ALL
+    st.session_state.sel_region = []
 if "sel_icb" not in st.session_state:
-    st.session_state.sel_icb = ALL
+    st.session_state.sel_icb = []
 if "sel_pr" not in st.session_state:
-    st.session_state.sel_pr = ALL
+    st.session_state.sel_pr = []
 
 # Region filter
-region_opts = [ALL] + sorted(df["region"].dropna().unique().tolist())
-sel_region = st.selectbox(
-    "Region",
-    region_opts,
-    index=region_opts.index(st.session_state.sel_region) if st.session_state.sel_region in region_opts else 0,
-    key="sel_region",
-)
-df_region = df if sel_region == ALL else df[df["region"] == sel_region]
+region_opts = sorted(df["region"].dropna().unique().tolist())
+sel_regions = [v for v in st.session_state.get("sel_region", []) if v in region_opts]
+sel_regions = st.multiselect("Region", region_opts, default=sel_regions, key="sel_region")
+df_region = df if not sel_regions else df[df["region"].isin(sel_regions)]
 
 # ICB filter - reset if current value no longer valid given region
 icb_opts = [ALL] + sorted(df_region["icb"].dropna().unique().tolist())
@@ -294,7 +290,7 @@ if sel_pr != ALL:
     ods_codes = [pr_map[sel_pr]]
 elif sel_icb != ALL:
     ods_codes = df_icb["ods_code"].unique().tolist()
-elif sel_region != ALL:
+elif sel_regions:
     ods_codes = df_region["ods_code"].unique().tolist()
 else:
     ods_codes = df["ods_code"].unique().tolist()
