@@ -348,3 +348,4 @@ with col2:
         hide_index=True,
         height=740,
     )
+    
