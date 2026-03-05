@@ -211,7 +211,13 @@ else:
     ods_codes = df["ods_code"].unique().tolist()
 
 # ── Data queries ──────────────────────────────────────────────────────────────
-st.write(f"ods_codes count: {len(ods_codes)}, first 3: {ods_codes[:3]}")
+st.write(conn.execute("""
+    SELECT hospital, length(hospital) as len, count(*) as rows
+    FROM prescribing
+    GROUP BY hospital, length(hospital)
+    ORDER BY rows DESC
+    LIMIT 10
+""").fetchdf())
 month_data = query_month_data(conn, ods_codes)
 top_items_data = query_top_items(conn, ods_codes)
 top_cost_data = query_top_cost(conn, ods_codes)
