@@ -1,83 +1,170 @@
-import streamlit as st
-import duckdb
-from google.cloud import storage
-from google.oauth2 import service_account
-import pandas as pd
-import plotly.graph_objects as go
-import os
+import shutil
 import logging
+import os
+import re
+
+import duckdb
+import plotly.graph_objects as go
+import pandas as pd
+import streamlit as st
+from google.cloud import bigquery, storage
+from google.oauth2 import service_account
 
 logger = logging.getLogger(__name__)
 
 st.set_page_config(layout="wide")
 
+# ── Constants ─────────────────────────────────────────────────────────────────
 
-@st.cache_resource
-def get_duckdb_connection():
-    """Download the DuckDB file from GCS if needed and return a connection.
+BUCKET_NAME      = "ebmdatalab"
+CSV_PREFIX       = "RC_tests/HOSPITAL_DISP_COMMUNITY_"  # blobs end in _yyyymm.csv
+GCS_DB_PATH      = "hospitalcommunityprescribing/hospitalfp10.duckdb"
+LOCAL_DB         = "/tmp/app.duckdb"
+SQL_PRESCRIBING  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "queries", "build_prescribing.sql")
+BQ_ODS_TABLE     = "ebmdatalab.hospitalcommunityprescribing.ods_mapping"
 
-    NOTE: This connection is shared across all Streamlit sessions (cache_resource).
-    Do NOT register virtual tables on it — use parameterised queries or per-query
-    temp tables inside a local connection instead.
-    """
-    local_db = "/tmp/app.duckdb"
-    bucket_name = "ebmdatalab"
-    gcs_db_path = "RC_tests/hospitalfp10.duckdb"
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _gcs_client():
     credentials = service_account.Credentials.from_service_account_info(
         st.secrets["gcp_service_account"]
     )
-    storage_client = storage.Client(credentials=credentials)
-    bucket = storage_client.bucket(bucket_name)
+    return storage.Client(credentials=credentials)
 
-    needs_download = True
-    if os.path.exists(local_db):
+
+def _bq_client():
+    credentials = service_account.Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"],
+        scopes=["https://www.googleapis.com/auth/bigquery.readonly"],
+    )
+    return bigquery.Client(credentials=credentials, project="ebmdatalab")
+
+
+def _latest_csv_yyyymm(bucket) -> str | None:
+    """Return the latest yyyymm suffix found among CSVs in GCS, e.g. '202503'."""
+    months = []
+    for blob in bucket.list_blobs(prefix=CSV_PREFIX):
+        m = re.search(r"_(\d{6})\.csv$", blob.name)
+        if m:
+            months.append(m.group(1))
+    return max(months) if months else None
+
+
+def _cached_yyyymm(conn) -> str | None:
+    """Return the latest yyyymm stored in the local DuckDB prescribing table."""
+    try:
+        result = conn.execute(
+            "SELECT strftime(MAX(CAST(month AS DATE)), '%Y%m') FROM prescribing"
+        ).fetchone()
+        return result[0] if result else None
+    except Exception:
+        return None
+
+
+def _rebuild_prescribing(conn):
+    """Pull pre-aggregated prescribing data from BigQuery using build_prescribing.sql."""
+    with open(SQL_PRESCRIBING) as f:
+        sql = f.read()
+    bq = _bq_client()
+    df = bq.query(sql).to_dataframe()
+    conn.execute("DROP TABLE IF EXISTS prescribing")
+    conn.register("_prescribing_df", df)
+    conn.execute("CREATE TABLE prescribing AS SELECT * FROM _prescribing_df")
+    conn.unregister("_prescribing_df")
+
+
+def _rebuild_ods_mapping(conn):
+    """Pull ods_mapping from BigQuery into DuckDB."""
+    bq = _bq_client()
+    df = bq.query(f"SELECT * FROM `{BQ_ODS_TABLE}`").to_dataframe()
+    conn.execute("DROP TABLE IF EXISTS ods_mapping")
+    conn.register("_ods_df", df)
+    conn.execute("CREATE TABLE ods_mapping AS SELECT * FROM _ods_df")
+    conn.unregister("_ods_df")
+
+
+def _save_db_to_gcs(bucket):
+    """Upload the local DuckDB to GCS so the next cold start can skip a rebuild."""
+    with st.spinner("Saving database to GCS for next time..."):
+        tmp = LOCAL_DB + ".upload.tmp"
+        shutil.copy2(LOCAL_DB, tmp)
         try:
-            conn = duckdb.connect(local_db)
-            result = conn.execute("SELECT COUNT(*) FROM prescribing").fetchone()
+            bucket.blob(GCS_DB_PATH).upload_from_filename(tmp)
+        finally:
+            os.remove(tmp)
+
+
+# ── DB bootstrap ──────────────────────────────────────────────────────────────
+
+@st.cache_resource
+def get_duckdb_connection():
+    """Return a ready DuckDB connection, rebuilding from source if stale or absent.
+
+    Logic:
+    1. If a local DB exists and its latest month matches the latest CSV in GCS -> reuse it.
+    2. Else try downloading the GCS-cached DuckDB and check freshness again (fast path).
+    3. If still stale or missing -> full rebuild from BQ, then save back to GCS.
+
+    NOTE: Connection is shared across Streamlit sessions (cache_resource).
+    Never register virtual tables on it - use parameterised queries instead.
+    """
+    storage_client = _gcs_client()
+    bucket = storage_client.bucket(BUCKET_NAME)
+
+    latest_csv = _latest_csv_yyyymm(bucket)
+    logger.info("Latest CSV month in GCS: %s", latest_csv)
+
+    # 1. Check local cache
+    if os.path.exists(LOCAL_DB):
+        try:
+            conn = duckdb.connect(LOCAL_DB)
+            if _cached_yyyymm(conn) == latest_csv:
+                logger.info("Local DuckDB is up to date, reusing.")
+                return conn
             conn.close()
-            if result and result[0] > 0:
-                needs_download = False
+            logger.info("Local DuckDB is stale.")
         except Exception as e:
-            logger.warning("Existing local DB unusable, will re-download: %s", e)
+            logger.warning("Local DuckDB unusable: %s", e)
 
-    if needs_download:
-        tmp_path = local_db + ".tmp"
-        try:
-            with st.spinner("Downloading database..."):
-                bucket.blob(gcs_db_path).download_to_filename(tmp_path)
-            os.replace(tmp_path, local_db)  # atomic swap — no partial files left behind
-        except Exception as e:
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
-            raise RuntimeError(f"Failed to download database from GCS: {e}") from e
+    # 2. Try GCS-cached DuckDB
+    tmp_path = LOCAL_DB + ".tmp"
+    try:
+        with st.spinner("Downloading cached database..."):
+            bucket.blob(GCS_DB_PATH).download_to_filename(tmp_path)
+        os.replace(tmp_path, LOCAL_DB)
+        conn = duckdb.connect(LOCAL_DB)
+        if _cached_yyyymm(conn) == latest_csv:
+            logger.info("GCS-cached DuckDB is up to date, using it.")
+            return conn
+        logger.info("GCS-cached DuckDB is also stale, doing full rebuild.")
+        conn.close()
+    except Exception as e:
+        logger.info("No usable GCS-cached DuckDB (%s), doing full rebuild.", e)
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
 
-    return duckdb.connect(local_db)
+    # 3. Full rebuild from BigQuery
+    with st.spinner("Rebuilding database from source data - this may take a few minutes..."):
+        conn = duckdb.connect(LOCAL_DB)
+        _rebuild_prescribing(conn)
+        _rebuild_ods_mapping(conn)
 
+    _save_db_to_gcs(bucket)
+    return conn
+
+
+# ── Query helpers ─────────────────────────────────────────────────────────────
 
 def query_month_data(conn: duckdb.DuckDBPyConnection, ods_codes: list[str]) -> pd.DataFrame:
-    """Return items and cost aggregated by month for the given ODS codes.
-
-    Passes ods_codes as a query parameter to avoid virtual-table registration,
-    which is not thread-safe on a shared connection.
-    """
     return conn.execute(
         """
-        SELECT
-            month,
-            sum(items)       AS items,
-            sum(actual_cost) AS actual_cost
+        SELECT month, sum(items) AS items, sum(actual_cost) AS actual_cost
         FROM prescribing AS rx
-        WHERE (
-            CASE
-                WHEN length(rx.hospital) = 3 THEN rx.hospital
-                ELSE left(rx.hospital, 3)
-            END
-        ) IN (
-            SELECT CASE WHEN length(code) = 3 THEN code ELSE left(code, 3) END
-            FROM (SELECT unnest($1) AS code)
+        WHERE EXISTS (
+            SELECT 1 FROM (SELECT unnest($1) AS code)
+            WHERE LEFT(rx.hospital, LENGTH(code)) = code
         )
-           OR rx.hospital IN (SELECT unnest($1))
         GROUP BY month
         ORDER BY month
         """,
@@ -90,16 +177,10 @@ def query_top_items(conn: duckdb.DuckDBPyConnection, ods_codes: list[str]) -> pd
         """
         SELECT bnf_name, sum(items) AS items
         FROM prescribing AS rx
-        WHERE (
-            CASE
-                WHEN length(rx.hospital) = 3 THEN rx.hospital
-                ELSE left(rx.hospital, 3)
-            END
-        ) IN (
-            SELECT CASE WHEN length(code) = 3 THEN code ELSE left(code, 3) END
-            FROM (SELECT unnest($1) AS code)
+        WHERE EXISTS (
+            SELECT 1 FROM (SELECT unnest($1) AS code)
+            WHERE LEFT(rx.hospital, LENGTH(code)) = code
         )
-           OR rx.hospital IN (SELECT unnest($1))
           AND CAST(month AS DATE) >= (SELECT MAX(CAST(month AS DATE)) FROM prescribing) - INTERVAL '3 months'
         GROUP BY bnf_name
         ORDER BY items DESC
@@ -114,16 +195,10 @@ def query_top_cost(conn: duckdb.DuckDBPyConnection, ods_codes: list[str]) -> pd.
         """
         SELECT bnf_name, sum(actual_cost) AS actual_cost
         FROM prescribing AS rx
-        WHERE (
-            CASE
-                WHEN length(rx.hospital) = 3 THEN rx.hospital
-                ELSE left(rx.hospital, 3)
-            END
-        ) IN (
-            SELECT CASE WHEN length(code) = 3 THEN code ELSE left(code, 3) END
-            FROM (SELECT unnest($1) AS code)
+        WHERE EXISTS (
+            SELECT 1 FROM (SELECT unnest($1) AS code)
+            WHERE LEFT(rx.hospital, LENGTH(code)) = code
         )
-           OR rx.hospital IN (SELECT unnest($1))
           AND CAST(month AS DATE) >= (SELECT MAX(CAST(month AS DATE)) FROM prescribing) - INTERVAL '3 months'
         GROUP BY bnf_name
         ORDER BY actual_cost DESC
@@ -168,7 +243,7 @@ sel_region = st.selectbox(
 )
 df_region = df if sel_region == ALL else df[df["region"] == sel_region]
 
-# ICB filter — reset if current value no longer valid given region
+# ICB filter - reset if current value no longer valid given region
 icb_opts = [ALL] + sorted(df_region["icb"].dropna().unique().tolist())
 if st.session_state.sel_icb not in icb_opts:
     st.session_state.sel_icb = ALL
@@ -180,7 +255,7 @@ sel_icb = st.selectbox(
 )
 df_icb = df_region if sel_icb == ALL else df_region[df_region["icb"] == sel_icb]
 
-# Hospital filter — reset if current value no longer valid given region+ICB
+# Hospital filter - reset if current value no longer valid given region+ICB
 pr_pairs = (
     df_icb[["ods_code", "ods_name"]]
     .drop_duplicates()
@@ -200,7 +275,7 @@ sel_pr = st.selectbox(
     key="sel_pr",
 )
 
-# Resolve which ODS codes to query — use the most specific selection made
+# Resolve which ODS codes to query - use the most specific selection made
 if sel_pr != ALL:
     ods_codes = [pr_map[sel_pr]]
 elif sel_icb != ALL:
@@ -210,7 +285,11 @@ elif sel_region != ALL:
 else:
     ods_codes = df["ods_code"].unique().tolist()
 
+if not ods_codes:
+    ods_codes = df["ods_code"].unique().tolist()
+
 # ── Data queries ──────────────────────────────────────────────────────────────
+
 with st.spinner("Loading data..."):
     month_data = query_month_data(conn, ods_codes)
     top_items_data = query_top_items(conn, ods_codes)
