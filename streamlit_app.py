@@ -40,7 +40,7 @@ def get_duckdb_connection():
 
 st.image("OpenPrescribing.svg")
 
-st.title("🎈 My new app")
+st.title("Hospital FP10s dispensed in the community viewer")
 
 conn = get_duckdb_connection()
 df = conn.execute(
