@@ -148,6 +148,14 @@ df = conn.execute(
     """
 ).fetchdf()
 
+st.write(conn.execute("""
+    SELECT 
+        COUNT(*) as total,
+        COUNT(ods_code) as non_null_codes,
+        COUNT(ods_name) as non_null_names
+    FROM ods_mapping
+""").fetchdf())
+
 ALL = "All"
 
 # Region filter
