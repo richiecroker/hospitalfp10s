@@ -60,16 +60,18 @@ def _rebuild_prescribing(conn):
     with open(os.path.join(SQL_DIR, "build_prescribing.sql")) as f:
         sql = f.read()
     bq = _bq_client()
+    tmp_parquet = "/tmp/prescribing.parquet"
     try:
         query_job = bq.query(sql)
         df = _normalise_df(query_job.result().to_dataframe())
-    except Exception as e:
+        df.to_parquet(tmp_parquet, index=False)
+        del df
+    except Exception:
         logger.exception("BigQuery error in build_prescribing.sql")
         raise
     conn.execute("DROP TABLE IF EXISTS prescribing")
-    conn.register("_tmp", df)
-    conn.execute("CREATE TABLE prescribing AS SELECT * FROM _tmp")
-    conn.unregister("_tmp")
+    conn.execute(f"CREATE TABLE prescribing AS SELECT * FROM read_parquet('{tmp_parquet}')")
+    os.remove(tmp_parquet)
 
 def _rebuild_ods_mapping(conn):
     bq = _bq_client()
